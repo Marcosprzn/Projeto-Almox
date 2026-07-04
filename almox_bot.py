@@ -1,0 +1,426 @@
+import time
+import os
+import sys
+import re
+import ctypes
+import atexit
+import traceback
+import tkinter as tk
+from tkinter import filedialog
+from pywinauto import mouse
+from pywinauto.keyboard import send_keys
+import openpyxl
+import PyPDF2
+
+# ============================================================
+# CAPTURA QUALQUER CRASH (mesmo fora do try/except)
+# ============================================================
+ARQUIVO_CRASH = os.path.join(os.path.dirname(__file__) or ".", "crash_almox.txt")
+
+def salvar_crash(tipo, mensagem, tb=None):
+    with open(ARQUIVO_CRASH, "a", encoding="utf-8") as f:
+        f.write(f"\n=== {tipo} em {time.strftime('%H:%M:%S')} ===\n")
+        f.write(f"{mensagem}\n")
+        if tb:
+            traceback.print_exc(file=f)
+
+def handler_excecao(tipo, valor, tb):
+    salvar_crash("EXCECAO NAO TRATADA", str(valor), tb)
+    print(f"\n[CRASH] Erro salvo em: {ARQUIVO_CRASH}")
+    print(f"[CRASH] {tipo.__name__}: {valor}")
+    input("Pressione ENTER para fechar...")
+
+sys.excepthook = handler_excecao
+
+atexit.register(lambda: salvar_crash("ATEXIT", "Programa finalizado"))
+
+with open(ARQUIVO_CRASH, "w", encoding="utf-8") as f:
+    f.write(f"LOG DE CRASH - ALMOX BOT\n")
+    f.write(f"Inicio: {time.strftime('%d/%m/%Y %H:%M:%S')}\n")
+    f.write("=" * 50 + "\n")
+
+# ============================================================
+# CONFIGURACOES
+# ============================================================
+EDIT_COORDS       = (328, 280)
+FILTRAR_COORDS    = (416, 678)
+PRIMEIRA_LINHA    = (649, 262)  # Primeiro item da tabela
+
+PASTA_ATUAL = os.path.dirname(__file__)
+EXCEL_PATH  = os.path.join(PASTA_ATUAL, "resultados_almox.xlsx")
+
+BOT_RODANDO = True
+PAUSADO = False
+
+# ============================================================
+# PAUSA F8
+# ============================================================
+def verificar_pausa():
+    global PAUSADO, BOT_RODANDO
+    # ESC = abortar a automacao
+    if ctypes.windll.user32.GetAsyncKeyState(0x1B) & 0x8000:
+        BOT_RODANDO = False
+        print("\n  [ESC] Abortando automacao...")
+        return
+    if ctypes.windll.user32.GetAsyncKeyState(0x77) & 0x8000:
+        PAUSADO = not PAUSADO
+        if PAUSADO:
+            print("\n  [F8] PAUSADO. Pressione F8 para retomar...")
+        else:
+            print("\n  [F8] Retomando...")
+        time.sleep(0.5)
+    while PAUSADO:
+        if ctypes.windll.user32.GetAsyncKeyState(0x77) & 0x8000:
+            PAUSADO = False
+            print("\n  [F8] Retomando...")
+            time.sleep(0.5)
+        time.sleep(0.1)
+
+# ============================================================
+# ROOT TK UNICO (reutilizado para dialogo e clipboard)
+# ============================================================
+# Criar/destruir varios Tk() no mesmo processo pode deixar o
+# interpretador Tcl instavel. Mantemos um unico root oculto.
+_TK_ROOT = None
+
+def _get_root():
+    global _TK_ROOT
+    if _TK_ROOT is None:
+        _TK_ROOT = tk.Tk()
+        _TK_ROOT.withdraw()
+    return _TK_ROOT
+
+# ============================================================
+# SELECIONAR PDF
+# ============================================================
+def selecionar_pdf():
+    root = _get_root()
+    root.attributes("-topmost", True)
+    caminho = filedialog.askopenfilename(
+        parent=root,
+        title="Selecione o PDF com os codigos",
+        filetypes=[("Arquivos PDF", "*.pdf"), ("Todos", "*.*")]
+    )
+    root.attributes("-topmost", False)
+    return caminho
+
+# ============================================================
+# LER PDF
+# ============================================================
+def ler_pdf(caminho):
+    linhas = []
+    with open(caminho, "rb") as f:
+        reader = PyPDF2.PdfReader(f)
+        for pagina in reader.pages:
+            texto = pagina.extract_text() or ""
+            for linha in texto.split("\n"):
+                linha = linha.strip()
+                if not linha:
+                    continue
+                dados = parse_linha(linha)
+                if dados:
+                    linhas.append(dados)
+    return linhas
+
+def parse_linha(linha):
+    partes = re.split(r"(\d{2}/\d{2}/\d{4})", linha)
+    if len(partes) < 3:
+        return None
+    antes_data = partes[0].strip()
+    data = partes[1].strip()
+    depois_data = partes[2].strip()
+    m = re.match(r"^(\d{2}\.\d{3})", antes_data)
+    if not m:
+        return None
+    codigo = m.group(1)
+    resto = antes_data[m.end():].strip()
+    dept_codigo = ""
+    dept_nome = ""
+    descricao = resto
+    m_dept = re.search(r"(\d{3})([A-Za-z\u00C0-\u00FF].*)$", resto)
+    if m_dept:
+        descricao = resto[:m_dept.start()].strip()
+        dept_codigo = m_dept.group(1)
+        dept_nome = m_dept.group(2).strip()
+    campos = depois_data.split()
+    req = campos[0] if len(campos) > 0 else ""
+    qtd = ""
+    unidade = ""
+    val_unit = ""
+    val_total = ""
+    if len(campos) > 1:
+        m_qtd = re.match(r"([\d.,]+)([A-Za-z].*)$", campos[1])
+        if m_qtd:
+            qtd = m_qtd.group(1)
+            unidade = m_qtd.group(2).strip()
+        else:
+            qtd = campos[1]
+    if len(campos) > 2:
+        val_unit = campos[2]
+    if len(campos) > 3:
+        val_total = campos[3]
+    return {
+        "codigo": codigo, "descricao": descricao,
+        "dept_codigo": dept_codigo, "dept_nome": dept_nome,
+        "data": data, "req": req, "qtd": qtd,
+        "unidade": unidade, "val_unit": val_unit, "val_total": val_total,
+    }
+
+def codigos_unicos(linhas):
+    vistos = set()
+    unicos = []
+    for item in linhas:
+        c = item["codigo"]
+        if c not in vistos:
+            vistos.add(c)
+            unicos.append(c)
+    return unicos
+
+# ============================================================
+# LER CADA LINHA DA GRADE navegando com seta para baixo
+# ============================================================
+# Marcador usado para detectar quando o Ctrl+C nao copiou nada
+# (evita ler o conteudo antigo/repetido do clipboard).
+SENTINELA_VAZIA = "___ALMOX_CLIPBOARD_VAZIO___"
+
+def ler_clipboard():
+    try:
+        root = _get_root()
+        root.update()
+        return root.clipboard_get()
+    except Exception:
+        return ""
+
+def set_clipboard(texto):
+    try:
+        root = _get_root()
+        root.clipboard_clear()
+        root.clipboard_append(texto)
+        root.update()
+    except Exception:
+        pass
+
+def parse_linha_grid(texto):
+    """Converte linha tabulada do clipboard em dict."""
+    if not texto:
+        return None
+    cols = texto.split("\t")
+    return {
+        "tipo": cols[0].strip() if len(cols) > 0 else "",
+        "data": cols[2].strip() if len(cols) > 2 else "",
+        "vl_saida": cols[9].strip() if len(cols) > 9 else "",
+    }
+
+def navegar_grade():
+    """Clica na primeira linha, navega pra baixo ate 'Final', retorna precos."""
+    linhas_lidas = []
+    ultimo_texto = None
+    try:
+        time.sleep(0.5)
+        mouse.click(button="left", coords=PRIMEIRA_LINHA)
+        time.sleep(0.3)
+
+        for _ in range(200):
+            verificar_pausa()
+            if not BOT_RODANDO:
+                break
+
+            # Zera o clipboard antes de copiar: se o Ctrl+C nao copiar
+            # nada, detectamos isso em vez de reprocessar linha antiga.
+            set_clipboard(SENTINELA_VAZIA)
+            send_keys("^c")
+            time.sleep(0.3)
+            texto = ler_clipboard()
+
+            # Copia falhou (clipboard nao mudou) -> fim da grade
+            if not texto or texto == SENTINELA_VAZIA:
+                break
+
+            # Linha identica a anterior -> grade nao avancou, evita loop
+            if texto == ultimo_texto:
+                break
+            ultimo_texto = texto
+
+            dados = parse_linha_grid(texto)
+            if not dados:
+                break
+
+            tipo = dados["tipo"].lower()
+            if "final" in tipo:
+                break
+            if tipo == "":
+                break
+
+            linhas_lidas.append(dados)
+            send_keys("{DOWN}")
+            time.sleep(0.2)
+
+    except Exception as e:
+        print(f"       [ERRO navegar_grade] {e}")
+
+    return linhas_lidas
+
+# ============================================================
+# GERAR EXCEL
+# ============================================================
+def gerar_excel(linhas, resultados, caminho):
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Almox"
+    cabecalhos = [
+        "Codigo", "Descricao", "Dept Cod", "Dept Nome",
+        "Data", "Requisicao", "Quantidade", "Unidade",
+        "Valor Unitario", "Valor Total"
+    ]
+    ws.append(cabecalhos)
+    for item in linhas:
+        chave = (item["codigo"], item["data"])
+        val_unit = resultados.get(chave, item["val_unit"])
+        ws.append([
+            item["codigo"], item["descricao"], item["dept_codigo"],
+            item["dept_nome"], item["data"], item["req"],
+            item["qtd"], item["unidade"], val_unit, item["val_total"],
+        ])
+    wb.save(caminho)
+    print(f"  Planilha salva: {caminho}")
+
+# ============================================================
+# INTERFACE
+# ============================================================
+def perguntar_quantidade(total):
+    print(f"  Total de codigos unicos disponiveis: {total}")
+    resp = input("  Quantos codigos processar? (Enter = todos): ").strip()
+    if resp == "":
+        return total
+    try:
+        n = int(resp)
+        return min(n, total)
+    except:
+        return total
+
+# ============================================================
+# MAIN
+# ============================================================
+os.system("cls" if os.name == "nt" else "clear")
+print("=" * 55)
+print("  BOT ALMOX - Captura de Unitarios")
+print("=" * 55)
+print()
+
+print("[1/5] Selecione o arquivo PDF...")
+PDF_PATH = selecionar_pdf()
+if not PDF_PATH:
+    print("  Nenhum PDF selecionado. Encerrando.")
+    input("Pressione ENTER para sair...")
+    sys.exit(0)
+print(f"  PDF: {os.path.basename(PDF_PATH)}")
+print()
+
+try:
+    print("Lendo PDF...")
+    linhas = ler_pdf(PDF_PATH)
+    codigos = codigos_unicos(linhas)
+    print(f"  Linhas no PDF: {len(linhas)}")
+    print(f"  Codigos unicos: {len(codigos)}")
+    print()
+
+    print("[2/5] Quantos codigos processar?")
+    qtd = perguntar_quantidade(len(codigos))
+    codigos = codigos[:qtd]
+    print(f"  Processando: {len(codigos)} codigos")
+    print()
+
+    print("[3/5] Pronto!")
+    print()
+
+    print("[4/5] Iniciando automacao...")
+    print("  Deixe a janela de consulta do MEGA ERP aberta e visivel.")
+    print("  [F8] = Pausar / Retomar    [ESC] = Abortar (salva o que ja foi lido)")
+    print("  Iniciando em 5 segundos...")
+    time.sleep(5)
+    print()
+
+    print("[5/5] Executando...")
+    print()
+
+    LOG_PATH = os.path.join(PASTA_ATUAL, "log_captura_grid.txt")
+    with open(LOG_PATH, "w", encoding="utf-8") as log:
+        log.write("LOG DE CAPTURA DA GRADE - ALMOX BOT\n")
+        log.write("=" * 60 + "\n\n")
+
+    linhas_por_codigo = {}
+    for item in linhas:
+        c = item["codigo"]
+        if c not in linhas_por_codigo:
+            linhas_por_codigo[c] = []
+        linhas_por_codigo[c].append(item)
+
+    resultados = {}
+
+    for i, codigo in enumerate(codigos, 1):
+        verificar_pausa()
+        if not BOT_RODANDO:
+            break
+
+        codigo_limpo = codigo.replace(".", "")
+        print(f"  [{i}/{len(codigos)}] Codigo: {codigo} -> digitando: {codigo_limpo}")
+
+        print("    [passo 1] Digitando codigo...")
+        mouse.click(button="left", coords=EDIT_COORDS)
+        time.sleep(0.3)
+        send_keys("^a")
+        time.sleep(0.1)
+        send_keys("{DELETE}")
+        time.sleep(0.1)
+        send_keys(codigo_limpo)
+        time.sleep(0.3)
+
+        print("    [passo 2] Clicando Filtrar...")
+        mouse.click(button="left", coords=FILTRAR_COORDS)
+        time.sleep(2)
+
+        print("    [passo 3] Navegando grade...")
+        linhas_grid = navegar_grade()
+        print(f"    -> Linhas lidas: {len(linhas_grid)}")
+
+        for lg in linhas_grid:
+            print(f"       Tipo: {lg['tipo']} | Data: {lg['data']} | Vl.Saida: {lg['vl_saida']}")
+
+        print("    [passo 4] Match por data...")
+        for item in linhas_por_codigo.get(codigo, []):
+            data_pdf = item["data"]
+            preco = "#N/D"
+            for lg in linhas_grid:
+                if lg["data"] == data_pdf and "saida" in lg["tipo"].lower():
+                    preco = lg["vl_saida"]
+                    break
+            chave = (codigo, data_pdf)
+            resultados[chave] = preco
+            print(f"    -> Data PDF: {data_pdf} | Preco: {preco}")
+
+        with open(LOG_PATH, "a", encoding="utf-8") as log:
+            log.write(f"=== Codigo: {codigo} ===\n")
+            for lg in linhas_grid:
+                log.write(f"  tipo={lg['tipo']} data={lg['data']} vl={lg['vl_saida']}\n")
+            log.write("=" * 40 + "\n\n")
+
+    print()
+    print("Gerando planilha final...")
+    gerar_excel(linhas, resultados, EXCEL_PATH)
+
+    print()
+    print("=" * 55)
+    print("  FINALIZADO!")
+    print(f"  Codigos processados: {len(codigos)}")
+    print(f"  Planilha: {EXCEL_PATH}")
+    print(f"  Log da grid: {LOG_PATH}")
+    print("=" * 55)
+
+except Exception as e:
+    print(f"\n\nERRO NA EXECUCAO: {e}")
+    traceback.print_exc()
+    salvar_crash("EXCEPT_MAIN", str(e))
+    print(f"Erro salvo em: {ARQUIVO_CRASH}")
+
+print()
+input("Pressione ENTER para fechar...")

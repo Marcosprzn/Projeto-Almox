@@ -1,0 +1,27 @@
+# Dados reais / entrada sensivel
+*.pdf
+
+# Saidas geradas pelo bot
+resultados_almox.xlsx
+*.xlsx
+
+# Logs gerados
+crash_almox.txt
+log_captura_grid.txt
+diagnostico_grade.txt
+exploracao_grade.txt
+teste_win32.txt
+inspecao_mega.txt
+
+# Screenshots de diagnostico
+*.png
+
+# Cache Python
+__pycache__/
+*.pyc
+
+# Config local do editor/agente
+.claude/
+
+# Tesseract portatil (baixado pelo instalador)
+tesseract/
