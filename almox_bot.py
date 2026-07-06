@@ -545,9 +545,66 @@ def perguntar_quantidade(total):
         return total
 
 # ============================================================
+# CONTADOR DE PROGRESSO (canto superior direito) + ETA
+# ============================================================
+def _habilitar_ansi():
+    """Liga o processamento de sequencias ANSI no console do Windows 10."""
+    try:
+        _kernel32.GetStdHandle.restype = ctypes.c_void_p
+        _kernel32.GetStdHandle.argtypes = [ctypes.c_int]
+        _kernel32.GetConsoleMode.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint32)]
+        _kernel32.SetConsoleMode.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
+        _kernel32.SetConsoleTitleW.argtypes = [ctypes.c_wchar_p]
+        h = _kernel32.GetStdHandle(-11)  # STD_OUTPUT_HANDLE
+        modo = ctypes.c_uint32()
+        _kernel32.GetConsoleMode(h, ctypes.byref(modo))
+        # ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004
+        _kernel32.SetConsoleMode(h, modo.value | 0x0004)
+    except Exception:
+        pass
+
+def _largura_console():
+    try:
+        import shutil
+        return shutil.get_terminal_size((80, 25)).columns
+    except Exception:
+        return 80
+
+def _fmt_tempo(seg):
+    seg = int(max(0, seg))
+    h, r = divmod(seg, 3600)
+    m, s = divmod(r, 60)
+    return f"{h:02d}:{m:02d}:{s:02d}"
+
+def _set_titulo(txt):
+    try:
+        _kernel32.SetConsoleTitleW(ctypes.c_wchar_p(txt))
+    except Exception:
+        pass
+
+def mostrar_progresso(i, n, inicio):
+    """Desenha ' i/n (xx%) ETA hh:mm:ss ' fixo no canto superior direito
+    e tambem no titulo da janela. i = quantos ja terminaram."""
+    elapsed = time.time() - inicio
+    frac = (i / n) if n else 1.0
+    eta = (elapsed / i * (n - i)) if i > 0 else 0
+    pct = int(frac * 100)
+    texto = f" {i}/{n} ({pct}%) ETA {_fmt_tempo(eta)} "
+
+    _set_titulo(f"Almox Bot -{texto}")
+    try:
+        col = max(1, _largura_console() - len(texto) + 1)
+        # salva cursor -> vai ao topo/coluna -> escreve invertido -> restaura
+        sys.stdout.write(f"\x1b7\x1b[1;{col}H\x1b[7m{texto}\x1b[0m\x1b8")
+        sys.stdout.flush()
+    except Exception:
+        pass
+
+# ============================================================
 # MAIN
 # ============================================================
 os.system("cls" if os.name == "nt" else "clear")
+_habilitar_ansi()
 print("=" * 55)
 print("  BOT ALMOX - Captura de Unitarios")
 print("=" * 55)
@@ -607,6 +664,8 @@ try:
         linhas_por_codigo[c].append(item)
 
     resultados = {}
+    inicio_proc = time.time()
+    mostrar_progresso(0, len(codigos), inicio_proc)
 
     for i, codigo in enumerate(codigos, 1):
         verificar_pausa()
@@ -656,6 +715,10 @@ try:
                 log.write(f"  tipo={lg['tipo']} data={lg['data']} vl={lg['vl_saida']}\n")
             log.write("=" * 40 + "\n\n")
 
+        # Atualiza o contador do canto (i codigos concluidos) + ETA
+        mostrar_progresso(i, len(codigos), inicio_proc)
+
+    _set_titulo("Almox Bot - Concluido")
     print()
     print("Gerando planilha final...")
     # A planilha ESPELHA o PDF: mesmas colunas, mesmas linhas na mesma
