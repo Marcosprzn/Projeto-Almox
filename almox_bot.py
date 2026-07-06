@@ -11,7 +11,12 @@ from tkinter import filedialog
 from pywinauto import mouse
 from pywinauto.keyboard import send_keys
 import openpyxl
-import PyPDF2
+# PyPDF2 foi descontinuado e renomeado para "pypdf" (mesma API).
+# Usa pypdf se estiver instalado; senao, cai no PyPDF2.
+try:
+    from pypdf import PdfReader
+except ImportError:
+    from PyPDF2 import PdfReader
 
 # ============================================================
 # CAPTURA QUALQUER CRASH (mesmo fora do try/except)
@@ -113,7 +118,7 @@ def selecionar_pdf():
 def ler_pdf(caminho):
     linhas = []
     with open(caminho, "rb") as f:
-        reader = PyPDF2.PdfReader(f)
+        reader = PdfReader(f)
         for pagina in reader.pages:
             texto = pagina.extract_text() or ""
             for linha in texto.split("\n"):

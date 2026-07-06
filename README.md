@@ -26,14 +26,17 @@ a captura é feita por **RPA** (automação de tela) sobre a janela do Mega.
 | `explorar_grade.py` | Explora a árvore de controles da grade (UIA) |
 | `teste_win32.py` | Testa backend win32 e screenshot da grade |
 | `mega_api.py` | Cliente REST do Mega (caso a API seja liberada no futuro) |
-| `instalar_dependencias.bat` | Instala openpyxl e PyPDF2 |
+| `instalar_dependencias.bat` | Instala pywinauto, openpyxl e pypdf |
 | `executar_almox.bat` | Executa o bot |
 
 ## Instalação
 
 ```bat
-pip install pywinauto openpyxl PyPDF2 requests
+pip install pywinauto openpyxl pypdf
 ```
+
+> `pypdf` é o sucessor do `PyPDF2` (mesma API). O código aceita os dois,
+> mas prefira `pypdf` — instala limpo no Python 3.11+.
 
 ou rode `instalar_dependencias.bat`.
 

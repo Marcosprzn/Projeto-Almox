@@ -9,13 +9,16 @@ USO:
   2) python comparar_pdf_planilha.py
   3) Selecione o PDF quando pedir (ou ajuste PDF_PATH abaixo).
 
-Requer: PyPDF2, openpyxl
+Requer: pypdf (ou PyPDF2), openpyxl
 """
 
 import os
 import re
 from collections import Counter
-import PyPDF2
+try:
+    from pypdf import PdfReader
+except ImportError:
+    from PyPDF2 import PdfReader
 import openpyxl
 import tkinter as tk
 from tkinter import filedialog
@@ -40,7 +43,7 @@ def parse_linha(linha):
 def ler_pdf(caminho):
     itens = []
     with open(caminho, "rb") as f:
-        reader = PyPDF2.PdfReader(f)
+        reader = PdfReader(f)
         for pagina in reader.pages:
             for linha in (pagina.extract_text() or "").split("\n"):
                 linha = linha.strip()
