@@ -5,7 +5,7 @@ color 0A
 echo ===================================================
 echo    Instalador - Almox Bot
 echo ===================================================
-echo   Instalando: openpyxl PyPDF2
+echo   Instalando: pywinauto openpyxl PyPDF2
 echo.
 
 REM Detecta Python
@@ -27,16 +27,24 @@ exit /b 1
 echo   Python: %PY_EXE%
 echo.
 
-echo   Instalando openpyxl...
+echo   Atualizando o pip...
+"%PY_EXE%" -m pip install --upgrade pip
+echo.
+
+echo   Instalando pywinauto (move mouse/teclado)...
+"%PY_EXE%" -m pip install pywinauto
+echo.
+
+echo   Instalando openpyxl (gera o Excel)...
 "%PY_EXE%" -m pip install openpyxl
 echo.
 
-echo   Instalando PyPDF2...
+echo   Instalando PyPDF2 (le o PDF)...
 "%PY_EXE%" -m pip install PyPDF2
 echo.
 
 echo   Verificando...
-"%PY_EXE%" -c "import openpyxl; import PyPDF2; print('OK!')"
+"%PY_EXE%" -c "import pywinauto; import openpyxl; import PyPDF2; from pywinauto.keyboard import send_keys; print('OK! Todas as bibliotecas do bot presentes.')"
 
 if %errorlevel% equ 0 (
     echo.
