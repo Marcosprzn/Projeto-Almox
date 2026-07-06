@@ -2,6 +2,7 @@ import time
 import os
 import sys
 import re
+import unicodedata
 import ctypes
 import atexit
 import traceback
@@ -259,11 +260,40 @@ def set_clipboard(texto):
     finally:
         _user32.CloseClipboard()
 
+def sem_acento(s):
+    """Remove acentos e deixa minusculo, para comparar textos (ex.: Saida)."""
+    if not s:
+        return ""
+    nfkd = unicodedata.normalize("NFKD", s)
+    return "".join(c for c in nfkd if not unicodedata.combining(c)).lower()
+
+# Palavras que so aparecem na linha de CABECALHO copiada pelo cxGrid.
+_MARCADORES_CABECALHO = ("data do movimento", "vl.saida", "movimentacao")
+
+def _eh_cabecalho(linha):
+    baixo = sem_acento(linha)
+    return any(m in baixo for m in _MARCADORES_CABECALHO)
+
+# Guarda o conteudo bruto do 1o Ctrl+C, so para diagnostico.
+_DEBUG_RAW_SALVO = False
+
 def parse_linha_grid(texto):
-    """Converte linha tabulada do clipboard em dict."""
+    """Converte o texto copiado do cxGrid em dict.
+
+    O Ctrl+C do cxGrid inclui a linha de CABECALHO junto com o(s)
+    registro(s). Separamos por linha, descartamos o cabecalho e lemos
+    a linha de dados (a ultima nao-cabecalho).
+    """
     if not texto:
         return None
-    cols = texto.split("\t")
+    linhas = [l for l in texto.replace("\r", "").split("\n") if l.strip()]
+    if not linhas:
+        return None
+    # Mantem apenas as linhas de dados (fora cabecalho)
+    dados = [l for l in linhas if not _eh_cabecalho(l)]
+    if not dados:
+        return None
+    cols = dados[-1].split("\t")   # ultima linha = registro selecionado
     return {
         "tipo": cols[0].strip() if len(cols) > 0 else "",
         "data": cols[2].strip() if len(cols) > 2 else "",
@@ -299,6 +329,18 @@ def navegar_grade():
             # Copia falhou (clipboard nao mudou) -> fim da grade
             if not texto or texto == SENTINELA_VAZIA:
                 break
+
+            # Salva o BRUTO do 1o Ctrl+C (com \t e \n visiveis) p/ diagnostico
+            global _DEBUG_RAW_SALVO
+            if not _DEBUG_RAW_SALVO:
+                _DEBUG_RAW_SALVO = True
+                try:
+                    caminho_dbg = os.path.join(PASTA_ATUAL, "debug_clipboard.txt")
+                    with open(caminho_dbg, "w", encoding="utf-8") as d:
+                        d.write("Conteudo BRUTO do primeiro Ctrl+C (repr):\n\n")
+                        d.write(repr(texto))
+                except Exception:
+                    pass
 
             # Linha identica a anterior -> grade nao avancou, evita loop
             if texto == ultimo_texto:
@@ -455,7 +497,8 @@ try:
             data_pdf = item["data"]
             preco = "#N/D"
             for lg in linhas_grid:
-                if lg["data"] == data_pdf and "saida" in lg["tipo"].lower():
+                # sem_acento resolve "Saída" vs "saida" (o tipo vem com acento)
+                if lg["data"] == data_pdf and "saida" in sem_acento(lg["tipo"]):
                     preco = lg["vl_saida"]
                     break
             chave = (codigo, data_pdf)

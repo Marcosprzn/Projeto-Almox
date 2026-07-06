@@ -13,6 +13,7 @@ exploracao_grade.txt
 teste_win32.txt
 inspecao_mega.txt
 coordenadas_novas.txt
+debug_clipboard.txt
 
 # Screenshots de diagnostico
 *.png
