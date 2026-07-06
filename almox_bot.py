@@ -183,22 +183,79 @@ def codigos_unicos(linhas):
 # (evita ler o conteudo antigo/repetido do clipboard).
 SENTINELA_VAZIA = "___ALMOX_CLIPBOARD_VAZIO___"
 
+# ------------------------------------------------------------
+# CLIPBOARD via API nativa do Windows (Win32).
+# O tkinter falha ao ler texto colado por apps Delphi (MEGA):
+# o MEGA copia como CF_UNICODETEXT e o tkinter pede outro formato,
+# resultando em "cannot clipboard". A API Win32 le/escreve exatamente
+# o formato certo e nao lanca esse erro.
+# ------------------------------------------------------------
+CF_UNICODETEXT = 13
+GMEM_MOVEABLE = 0x0002
+
+_user32 = ctypes.windll.user32
+_kernel32 = ctypes.windll.kernel32
+
+# argtypes/restypes corretos (essencial no Python 64 bits, senao os
+# ponteiros/handles estouram e a leitura falha silenciosamente).
+_user32.OpenClipboard.argtypes = [ctypes.c_void_p]
+_user32.GetClipboardData.restype = ctypes.c_void_p
+_user32.GetClipboardData.argtypes = [ctypes.c_uint]
+_user32.SetClipboardData.restype = ctypes.c_void_p
+_user32.SetClipboardData.argtypes = [ctypes.c_uint, ctypes.c_void_p]
+_kernel32.GlobalLock.restype = ctypes.c_void_p
+_kernel32.GlobalLock.argtypes = [ctypes.c_void_p]
+_kernel32.GlobalUnlock.argtypes = [ctypes.c_void_p]
+_kernel32.GlobalAlloc.restype = ctypes.c_void_p
+_kernel32.GlobalAlloc.argtypes = [ctypes.c_uint, ctypes.c_size_t]
+
+def _abrir_clipboard(tentativas=10):
+    # O clipboard pode estar ocupado por outro processo; tenta algumas vezes.
+    for _ in range(tentativas):
+        if _user32.OpenClipboard(0):
+            return True
+        time.sleep(0.05)
+    return False
+
 def ler_clipboard():
+    if not _abrir_clipboard():
+        return ""
     try:
-        root = _get_root()
-        root.update()
-        return root.clipboard_get()
+        handle = _user32.GetClipboardData(CF_UNICODETEXT)
+        if not handle:
+            return ""
+        ptr = _kernel32.GlobalLock(handle)
+        if not ptr:
+            return ""
+        try:
+            return ctypes.c_wchar_p(ptr).value or ""
+        finally:
+            _kernel32.GlobalUnlock(handle)
     except Exception:
         return ""
+    finally:
+        _user32.CloseClipboard()
 
 def set_clipboard(texto):
+    if not _abrir_clipboard():
+        return
     try:
-        root = _get_root()
-        root.clipboard_clear()
-        root.clipboard_append(texto)
-        root.update()
+        _user32.EmptyClipboard()
+        buf = ctypes.create_unicode_buffer(texto)
+        tamanho = ctypes.sizeof(buf)
+        handle = _kernel32.GlobalAlloc(GMEM_MOVEABLE, tamanho)
+        if not handle:
+            return
+        ptr = _kernel32.GlobalLock(handle)
+        if ptr:
+            ctypes.memmove(ptr, buf, tamanho)
+            _kernel32.GlobalUnlock(handle)
+            # Apos SetClipboardData o sistema passa a ser dono do handle.
+            _user32.SetClipboardData(CF_UNICODETEXT, handle)
     except Exception:
         pass
+    finally:
+        _user32.CloseClipboard()
 
 def parse_linha_grid(texto):
     """Converte linha tabulada do clipboard em dict."""
