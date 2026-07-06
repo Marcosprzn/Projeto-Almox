@@ -394,8 +394,8 @@ def gerar_excel(linhas, resultados, caminho):
 # INTERFACE
 # ============================================================
 def perguntar_quantidade(total):
-    print(f"  Total de LINHAS no PDF: {total}")
-    resp = input("  Quantas linhas do PDF processar? (Enter = todas): ").strip()
+    print(f"  Total de codigos encontrados no PDF: {total}")
+    resp = input("  Quantos codigos processar? (Enter = todos): ").strip()
     if resp == "":
         return total
     try:
@@ -425,20 +425,20 @@ print()
 try:
     print("Lendo PDF...")
     linhas = ler_pdf(PDF_PATH)
-    print(f"  Linhas no PDF: {len(linhas)}")
-    print(f"  Codigos unicos: {len(codigos_unicos(linhas))}")
+    print(f"  Codigos encontrados no PDF (contando repetidos): {len(linhas)}")
+    print(f"  Codigos distintos: {len(codigos_unicos(linhas))}")
     print()
 
-    print("[2/5] Quantas linhas do PDF processar?")
+    print("[2/5] Quantos codigos processar?")
     qtd = perguntar_quantidade(len(linhas))
-    # Recorta as PRIMEIRAS N linhas do PDF, na ordem em que aparecem.
+    # Recorta os PRIMEIROS N codigos encontrados (linhas do PDF), na ordem.
     # A planilha final sera um espelho dessas linhas.
     linhas = linhas[:qtd]
-    # Codigos a consultar no MEGA = unicos DENTRO do recorte (so para nao
-    # consultar o mesmo codigo varias vezes; nao muda a saida).
+    # A automacao busca cada codigo DISTINTO uma vez no MEGA (buscar o mesmo
+    # codigo repetido daria o mesmo resultado). Esse e o numero de buscas.
     codigos = codigos_unicos(linhas)
-    print(f"  Processando: {len(linhas)} linhas do PDF")
-    print(f"  Codigos distintos a consultar no MEGA: {len(codigos)}")
+    print(f"  Codigos a processar (contando repetidos): {len(linhas)}")
+    print(f"  >> A automacao vai fazer {len(codigos)} buscas no MEGA (codigos distintos)")
     print()
 
     print("[3/5] Pronto!")
@@ -527,8 +527,8 @@ try:
     print()
     print("=" * 55)
     print("  FINALIZADO!")
-    print(f"  Linhas do PDF processadas: {len(linhas)}")
-    print(f"  Codigos consultados no MEGA: {len(codigos)}")
+    print(f"  Codigos processados (contando repetidos): {len(linhas)}")
+    print(f"  Buscas feitas no MEGA (codigos distintos): {len(codigos)}")
     print(f"  Planilha: {EXCEL_PATH}")
     print(f"  Log da grid: {LOG_PATH}")
     print("=" * 55)
