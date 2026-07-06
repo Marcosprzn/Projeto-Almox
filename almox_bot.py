@@ -44,7 +44,9 @@ with open(ARQUIVO_CRASH, "w", encoding="utf-8") as f:
 # ============================================================
 EDIT_COORDS       = (328, 280)
 FILTRAR_COORDS    = (416, 678)
-PRIMEIRA_LINHA    = (649, 262)  # Primeiro item da tabela
+PRIMEIRA_LINHA    = (620, 267)  # Ponto DENTRO da grade (TcxGridSite).
+                                # Nao precisa ser exatamente a 1a linha:
+                                # o bot da Ctrl+Home para ir ao topo.
 
 PASTA_ATUAL = os.path.dirname(__file__)
 EXCEL_PATH  = os.path.join(PASTA_ATUAL, "resultados_almox.xlsx")
@@ -274,7 +276,12 @@ def navegar_grade():
     ultimo_texto = None
     try:
         time.sleep(0.5)
+        # Entra na grade (TcxGridSite) com um clique...
         mouse.click(button="left", coords=PRIMEIRA_LINHA)
+        time.sleep(0.3)
+        # ...e sobe para o PRIMEIRO registro. No cxGrid, Ctrl+Home vai ao
+        # topo, entao nao dependemos do clique cair exatamente na 1a linha.
+        send_keys("^{HOME}")
         time.sleep(0.3)
 
         for _ in range(200):
