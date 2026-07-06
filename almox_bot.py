@@ -359,37 +359,85 @@ def sem_acento(s):
     nfkd = unicodedata.normalize("NFKD", s)
     return "".join(c for c in nfkd if not unicodedata.combining(c)).lower()
 
-# Palavras que so aparecem na linha de CABECALHO copiada pelo cxGrid.
-_MARCADORES_CABECALHO = ("data do movimento", "vl.saida", "movimentacao")
+# Palavras que identificam a linha de CABECALHO copiada pelo cxGrid.
+# NAO dependemos de "vl.saida" aqui porque essa coluna pode nao existir
+# em alguns PCs; usamos colunas que sempre aparecem.
+_MARCADORES_CABECALHO = ("data do movimento", "movimentacao", "tipo de movimento")
 
 def _eh_cabecalho(linha):
     baixo = sem_acento(linha)
     return any(m in baixo for m in _MARCADORES_CABECALHO)
 
+def _norm_col(s):
+    """Normaliza um nome de coluna: sem acento, sem espacos, minusculo."""
+    return sem_acento(s).replace(" ", "").strip()
+
+def _indice_coluna(cabecalho_cols, *alvos):
+    """Indice da 1a coluna cujo nome normalizado casa exatamente com um alvo."""
+    for i, nome in enumerate(cabecalho_cols):
+        if _norm_col(nome) in alvos:
+            return i
+    return -1
+
 # Guarda o conteudo bruto do 1o Ctrl+C, so para diagnostico.
 _DEBUG_RAW_SALVO = False
+# Avisa uma unica vez se a coluna Vl.Saida nao estiver visivel na grade.
+_AVISO_VLSAIDA = False
 
 def parse_linha_grid(texto):
-    """Converte o texto copiado do cxGrid em dict.
+    """Converte o texto copiado do cxGrid em dict, localizando as colunas
+    pelo NOME no cabecalho.
 
-    O Ctrl+C do cxGrid inclui a linha de CABECALHO junto com o(s)
-    registro(s). Separamos por linha, descartamos o cabecalho e lemos
-    a linha de dados (a ultima nao-cabecalho).
+    As colunas visiveis da grade variam por PC/usuario no MEGA, entao usar
+    posicao fixa (col 9) quebra. Aqui lemos o cabecalho (que vem junto no
+    Ctrl+C) e achamos Movimentacao / Data do Movimento / Vl.Saida pelo nome.
     """
+    global _AVISO_VLSAIDA
     if not texto:
         return None
     linhas = [l for l in texto.replace("\r", "").split("\n") if l.strip()]
     if not linhas:
         return None
-    # Mantem apenas as linhas de dados (fora cabecalho)
-    dados = [l for l in linhas if not _eh_cabecalho(l)]
+
+    cabecalho = None
+    dados = []
+    for l in linhas:
+        if _eh_cabecalho(l):
+            cabecalho = l
+        else:
+            dados.append(l)
     if not dados:
         return None
     cols = dados[-1].split("\t")   # ultima linha = registro selecionado
+
+    # Indices pelas colunas do cabecalho; sem cabecalho, cai no padrao antigo.
+    if cabecalho:
+        cab = cabecalho.split("\t")
+        i_tipo = _indice_coluna(cab, "movimentacao")
+        i_data = _indice_coluna(cab, "datadomovimento")
+        i_vl = _indice_coluna(cab, "vl.saida", "vlsaida")
+    else:
+        i_tipo, i_data, i_vl = 0, 2, 9
+
+    if i_tipo < 0:
+        i_tipo = 0
+    if i_data < 0:
+        i_data = 2
+
+    if i_vl < 0 and not _AVISO_VLSAIDA:
+        _AVISO_VLSAIDA = True
+        print("\n  [ATENCAO] A coluna 'Vl.Saida' NAO esta visivel na grade do MEGA!")
+        print("            Todos os valores sairao vazios. Adicione a coluna:")
+        print("            botao direito no cabecalho da grade -> Seletor de Campos")
+        print("            -> arraste 'Vl.Saida' para a grade. Depois rode de novo.\n")
+
+    def pega(i):
+        return cols[i].strip() if 0 <= i < len(cols) else ""
+
     return {
-        "tipo": cols[0].strip() if len(cols) > 0 else "",
-        "data": cols[2].strip() if len(cols) > 2 else "",
-        "vl_saida": cols[9].strip() if len(cols) > 9 else "",
+        "tipo": pega(i_tipo),
+        "data": pega(i_data),
+        "vl_saida": pega(i_vl),   # "" se a coluna nao existir na grade
     }
 
 def navegar_grade():
