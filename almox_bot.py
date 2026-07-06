@@ -513,7 +513,13 @@ try:
 
     print()
     print("Gerando planilha final...")
-    gerar_excel(linhas, resultados, EXCEL_PATH)
+    # Escreve no Excel SO as linhas dos codigos processados. Sem isso, a
+    # planilha traria o PDF inteiro (todos os codigos), ignorando o limite
+    # que voce escolheu ("processar apenas N codigos").
+    codigos_processados = set(codigos)
+    linhas_saida = [item for item in linhas if item["codigo"] in codigos_processados]
+    gerar_excel(linhas_saida, resultados, EXCEL_PATH)
+    print(f"  Linhas na planilha: {len(linhas_saida)} (dos {len(codigos)} codigos processados)")
 
     print()
     print("=" * 55)
