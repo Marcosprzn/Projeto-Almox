@@ -394,8 +394,8 @@ def gerar_excel(linhas, resultados, caminho):
 # INTERFACE
 # ============================================================
 def perguntar_quantidade(total):
-    print(f"  Total de codigos unicos disponiveis: {total}")
-    resp = input("  Quantos codigos processar? (Enter = todos): ").strip()
+    print(f"  Total de LINHAS no PDF: {total}")
+    resp = input("  Quantas linhas do PDF processar? (Enter = todas): ").strip()
     if resp == "":
         return total
     try:
@@ -425,15 +425,20 @@ print()
 try:
     print("Lendo PDF...")
     linhas = ler_pdf(PDF_PATH)
-    codigos = codigos_unicos(linhas)
     print(f"  Linhas no PDF: {len(linhas)}")
-    print(f"  Codigos unicos: {len(codigos)}")
+    print(f"  Codigos unicos: {len(codigos_unicos(linhas))}")
     print()
 
-    print("[2/5] Quantos codigos processar?")
-    qtd = perguntar_quantidade(len(codigos))
-    codigos = codigos[:qtd]
-    print(f"  Processando: {len(codigos)} codigos")
+    print("[2/5] Quantas linhas do PDF processar?")
+    qtd = perguntar_quantidade(len(linhas))
+    # Recorta as PRIMEIRAS N linhas do PDF, na ordem em que aparecem.
+    # A planilha final sera um espelho dessas linhas.
+    linhas = linhas[:qtd]
+    # Codigos a consultar no MEGA = unicos DENTRO do recorte (so para nao
+    # consultar o mesmo codigo varias vezes; nao muda a saida).
+    codigos = codigos_unicos(linhas)
+    print(f"  Processando: {len(linhas)} linhas do PDF")
+    print(f"  Codigos distintos a consultar no MEGA: {len(codigos)}")
     print()
 
     print("[3/5] Pronto!")
@@ -513,18 +518,17 @@ try:
 
     print()
     print("Gerando planilha final...")
-    # Escreve no Excel SO as linhas dos codigos processados. Sem isso, a
-    # planilha traria o PDF inteiro (todos os codigos), ignorando o limite
-    # que voce escolheu ("processar apenas N codigos").
-    codigos_processados = set(codigos)
-    linhas_saida = [item for item in linhas if item["codigo"] in codigos_processados]
-    gerar_excel(linhas_saida, resultados, EXCEL_PATH)
-    print(f"  Linhas na planilha: {len(linhas_saida)} (dos {len(codigos)} codigos processados)")
+    # A planilha ESPELHA o PDF: mesmas colunas, mesmas linhas na mesma
+    # ordem, com o Valor Unitario preenchido pelo valor de saida da data
+    # de cada linha.
+    gerar_excel(linhas, resultados, EXCEL_PATH)
+    print(f"  Linhas na planilha: {len(linhas)} (espelho das linhas do PDF processadas)")
 
     print()
     print("=" * 55)
     print("  FINALIZADO!")
-    print(f"  Codigos processados: {len(codigos)}")
+    print(f"  Linhas do PDF processadas: {len(linhas)}")
+    print(f"  Codigos consultados no MEGA: {len(codigos)}")
     print(f"  Planilha: {EXCEL_PATH}")
     print(f"  Log da grid: {LOG_PATH}")
     print("=" * 55)
