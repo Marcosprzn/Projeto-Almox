@@ -21,22 +21,23 @@ a captura é feita por **RPA** (automação de tela) sobre a janela do Mega.
 | Arquivo | Função |
 |---|---|
 | `almox_bot.py` | Bot principal: PDF → filtra no Mega → lê a grade → Excel |
-| `inspecionar_mega.py` | Descobre os controles reais da janela do Mega (para trocar cliques por pixel por controles) |
-| `diagnostico_grade.py` | Testa leitura da grade em várias posições (UIA) |
-| `explorar_grade.py` | Explora a árvore de controles da grade (UIA) |
-| `teste_win32.py` | Testa backend win32 e screenshot da grade |
+| `achar_coordenadas.py` | Recalibra as coordenadas (campo, Filtrar, grade) na sua tela |
+| `comparar_pdf_planilha.py` | Confere se todos os itens do PDF entraram na planilha |
 | `mega_api.py` | Cliente REST do Mega (caso a API seja liberada no futuro) |
-| `instalar_dependencias.bat` | Instala pywinauto, openpyxl e pypdf |
+| `instalar_dependencias.bat` | Instala openpyxl e pypdf |
 | `executar_almox.bat` | Executa o bot |
+| `inspecionar_mega.py`, `diagnostico_grade.py`, `explorar_grade.py`, `teste_win32.py` | Diagnóstico (opcionais; usam pywinauto) |
 
 ## Instalação
 
 ```bat
-pip install pywinauto openpyxl pypdf
+pip install openpyxl pypdf
 ```
 
-> `pypdf` é o sucessor do `PyPDF2` (mesma API). O código aceita os dois,
-> mas prefira `pypdf` — instala limpo no Python 3.11+.
+> O bot controla mouse e teclado pela **API nativa do Windows (`ctypes`)** —
+> **não** usa `pywinauto`/`pywin32` (que davam "DLL load failed" em alguns PCs).
+> Só o PDF (`pypdf`) e o Excel (`openpyxl`) precisam ser instalados.
+> `pypdf` é o sucessor do `PyPDF2` (o código aceita os dois).
 
 ou rode `instalar_dependencias.bat`.
 

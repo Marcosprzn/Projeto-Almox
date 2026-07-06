@@ -30,7 +30,7 @@ REM ====================================================
 REM PASSO 1: Instalar bibliotecas Python
 REM ====================================================
 echo [1/3] Instalando bibliotecas Python...
-"%PY_EXE%" -m pip install pywinauto openpyxl pypdf --quiet
+"%PY_EXE%" -m pip install openpyxl pypdf --quiet
 echo.
 
 REM ====================================================
@@ -62,7 +62,7 @@ REM ====================================================
 REM PASSO 3: Verificar
 REM ====================================================
 echo [3/3] Verificando...
-"%PY_EXE%" -c "import pywinauto, openpyxl; from pypdf import PdfReader; print('OK!')"
+"%PY_EXE%" -c "import openpyxl; from pypdf import PdfReader; print('OK!')"
 if errorlevel 1 (
     echo    Erro nas bibliotecas Python.
 )

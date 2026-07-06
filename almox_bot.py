@@ -8,8 +8,95 @@ import atexit
 import traceback
 import tkinter as tk
 from tkinter import filedialog
-from pywinauto import mouse
-from pywinauto.keyboard import send_keys
+# ============================================================
+# ENTRADA (mouse + teclado) via API nativa do Windows (ctypes)
+# Substitui o pywinauto para NAO depender de pywin32/comtypes/win32ui,
+# que causam "DLL load failed" / "modulo nao encontrado" em varios PCs.
+# Usa apenas o proprio Windows (ja incluso no Python).
+# ============================================================
+_WORD = ctypes.c_ushort
+_DWORD = ctypes.c_ulong
+_LONG = ctypes.c_long
+_ULONG_PTR = ctypes.POINTER(ctypes.c_ulong)
+_u32 = ctypes.windll.user32
+
+
+class _KEYBDINPUT(ctypes.Structure):
+    _fields_ = [("wVk", _WORD), ("wScan", _WORD),
+                ("dwFlags", _DWORD), ("time", _DWORD),
+                ("dwExtraInfo", _ULONG_PTR)]
+
+
+class _MOUSEINPUT(ctypes.Structure):
+    _fields_ = [("dx", _LONG), ("dy", _LONG),
+                ("mouseData", _DWORD), ("dwFlags", _DWORD),
+                ("time", _DWORD), ("dwExtraInfo", _ULONG_PTR)]
+
+
+class _INPUTUNION(ctypes.Union):
+    _fields_ = [("ki", _KEYBDINPUT), ("mi", _MOUSEINPUT)]
+
+
+class _INPUT(ctypes.Structure):
+    _fields_ = [("type", _DWORD), ("u", _INPUTUNION)]
+
+
+_INPUT_KEYBOARD = 1
+_KEYEVENTF_KEYUP = 0x0002
+_KEYEVENTF_UNICODE = 0x0004
+
+# Virtual-Key codes usados pelo bot
+VK_CONTROL = 0x11
+VK_DELETE = 0x2E
+VK_DOWN = 0x28
+VK_HOME = 0x24
+VK_A = 0x41
+VK_C = 0x43
+
+
+def _enviar(*inputs):
+    n = len(inputs)
+    arr = (_INPUT * n)(*inputs)
+    _u32.SendInput(n, arr, ctypes.sizeof(_INPUT))
+
+
+def _in_vk(vk, up=False):
+    ki = _KEYBDINPUT(vk, 0, _KEYEVENTF_KEYUP if up else 0, 0, None)
+    return _INPUT(_INPUT_KEYBOARD, _INPUTUNION(ki=ki))
+
+
+def _in_uni(ch, up=False):
+    fl = _KEYEVENTF_UNICODE | (_KEYEVENTF_KEYUP if up else 0)
+    ki = _KEYBDINPUT(0, ord(ch), fl, 0, None)
+    return _INPUT(_INPUT_KEYBOARD, _INPUTUNION(ki=ki))
+
+
+def tecla(vk):
+    """Pressiona e solta uma tecla (Virtual-Key code)."""
+    _enviar(_in_vk(vk), _in_vk(vk, up=True))
+
+
+def ctrl_mais(vk):
+    """Ctrl + tecla (ex.: Ctrl+C, Ctrl+A, Ctrl+Home)."""
+    _enviar(_in_vk(VK_CONTROL), _in_vk(vk),
+            _in_vk(vk, up=True), _in_vk(VK_CONTROL, up=True))
+
+
+def digitar(texto):
+    """Digita um texto caractere a caractere (independe do layout do teclado)."""
+    for ch in texto:
+        _enviar(_in_uni(ch), _in_uni(ch, up=True))
+
+
+def clicar(x, y):
+    """Move o mouse e da um clique esquerdo em (x, y)."""
+    _MOUSEEVENTF_LEFTDOWN = 0x0002
+    _MOUSEEVENTF_LEFTUP = 0x0004
+    _u32.SetCursorPos(int(x), int(y))
+    time.sleep(0.05)
+    _u32.mouse_event(_MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
+    time.sleep(0.02)
+    _u32.mouse_event(_MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
 import openpyxl
 # PyPDF2 foi descontinuado e renomeado para "pypdf" (mesma API).
 # Usa pypdf se estiver instalado; senao, cai no PyPDF2.
@@ -312,11 +399,11 @@ def navegar_grade():
     try:
         time.sleep(0.5)
         # Entra na grade (TcxGridSite) com um clique...
-        mouse.click(button="left", coords=PRIMEIRA_LINHA)
+        clicar(*PRIMEIRA_LINHA)
         time.sleep(0.3)
         # ...e sobe para o PRIMEIRO registro. No cxGrid, Ctrl+Home vai ao
         # topo, entao nao dependemos do clique cair exatamente na 1a linha.
-        send_keys("^{HOME}")
+        ctrl_mais(VK_HOME)
         time.sleep(0.3)
 
         for _ in range(200):
@@ -327,7 +414,7 @@ def navegar_grade():
             # Zera o clipboard antes de copiar: se o Ctrl+C nao copiar
             # nada, detectamos isso em vez de reprocessar linha antiga.
             set_clipboard(SENTINELA_VAZIA)
-            send_keys("^c")
+            ctrl_mais(VK_C)
             time.sleep(0.3)
             texto = ler_clipboard()
 
@@ -363,7 +450,7 @@ def navegar_grade():
                 break
 
             linhas_lidas.append(dados)
-            send_keys("{DOWN}")
+            tecla(VK_DOWN)
             time.sleep(0.2)
 
     except Exception as e:
@@ -482,17 +569,17 @@ try:
         print(f"  [{i}/{len(codigos)}] Codigo: {codigo} -> digitando: {codigo_limpo}")
 
         print("    [passo 1] Digitando codigo...")
-        mouse.click(button="left", coords=EDIT_COORDS)
+        clicar(*EDIT_COORDS)
         time.sleep(0.3)
-        send_keys("^a")
+        ctrl_mais(VK_A)
         time.sleep(0.1)
-        send_keys("{DELETE}")
+        tecla(VK_DELETE)
         time.sleep(0.1)
-        send_keys(codigo_limpo)
+        digitar(codigo_limpo)
         time.sleep(0.3)
 
         print("    [passo 2] Clicando Filtrar...")
-        mouse.click(button="left", coords=FILTRAR_COORDS)
+        clicar(*FILTRAR_COORDS)
         time.sleep(2)
 
         print("    [passo 3] Navegando grade...")
