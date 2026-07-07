@@ -237,7 +237,10 @@ def parse_linha(linha):
     dept_codigo = ""
     dept_nome = ""
     descricao = resto
-    m_dept = re.search(r"(\d{3})([A-Za-z\u00C0-\u00FF].*)$", resto)
+    # Setor = 3 digitos + espaco(s) + nome (so letras/acentos/espacos) no FIM.
+    # O espaco obrigatorio evita confundir com "250W", "120 CM.", "200W" etc.,
+    # que ficam na descricao; pega o "832 Administracao" real no fim da linha.
+    m_dept = re.search(r"(\d{3})\s+([A-Za-z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF ]*?)\s*$", resto)
     if m_dept:
         descricao = resto[:m_dept.start()].strip()
         dept_codigo = m_dept.group(1)
@@ -514,7 +517,22 @@ def navegar_grade():
 # ============================================================
 # GERAR EXCEL
 # ============================================================
+def br_num(s):
+    """Converte texto pt-BR ('1.234,56', '75', '7,5525') em float.
+    Retorna None se nao for numero (ex.: '#N/D', vazio)."""
+    if s is None:
+        return None
+    t = str(s).strip()
+    if not t or t.upper() in ("#N/D", "#N/A", "N/D"):
+        return None
+    t = t.replace(".", "").replace(",", ".")  # ponto=milhar, virgula=decimal
+    try:
+        return float(t)
+    except ValueError:
+        return None
+
 def gerar_excel(linhas, resultados, caminho):
+    from openpyxl.styles import Font, Alignment
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Almox"
@@ -524,14 +542,53 @@ def gerar_excel(linhas, resultados, caminho):
         "Valor Unitario", "Valor Total"
     ]
     ws.append(cabecalhos)
+
+    r = 2
     for item in linhas:
         chave = (item["codigo"], item["data"])
-        val_unit = resultados.get(chave, item["val_unit"])
+        val_unit_txt = resultados.get(chave, item["val_unit"])
+        qtd_num = br_num(item["qtd"])
+        vu_num = br_num(val_unit_txt)
+
+        # Quantidade (G) e Valor Unitario (I): numero quando possivel, senao
+        # mantem o texto original (ex.: '#N/D').
+        cel_qtd = qtd_num if qtd_num is not None else item["qtd"]
+        cel_vu = vu_num if vu_num is not None else val_unit_txt
+
         ws.append([
             item["codigo"], item["descricao"], item["dept_codigo"],
             item["dept_nome"], item["data"], item["req"],
-            item["qtd"], item["unidade"], val_unit, item["val_total"],
+            cel_qtd, item["unidade"], cel_vu, None,
         ])
+
+        # Valor Total (J) = Valor Unitario (I) x Quantidade (G), como FORMULA.
+        # So cria a formula quando os dois sao numeros.
+        if qtd_num is not None and vu_num is not None:
+            ws.cell(row=r, column=10).value = f"=I{r}*G{r}"
+        r += 1
+
+    # ---- Formatacao para a planilha "se adequar" ----
+    for c in range(1, 11):
+        ws.cell(row=1, column=c).font = Font(bold=True)
+    ws.freeze_panes = "A2"  # trava o cabecalho ao rolar
+
+    larguras = {"A": 10, "B": 48, "C": 9, "D": 16, "E": 12,
+                "F": 12, "G": 11, "H": 8, "I": 15, "J": 15}
+    for col, w in larguras.items():
+        ws.column_dimensions[col].width = w
+
+    # Descricao: quebra de linha para nomes grandes nao invadirem colunas
+    for (cel,) in ws.iter_rows(min_row=2, min_col=2, max_col=2):
+        cel.alignment = Alignment(wrap_text=True, vertical="top")
+    # Quantidade com 2 casas; valores com 4 casas
+    for (cel,) in ws.iter_rows(min_row=2, min_col=7, max_col=7):
+        if isinstance(cel.value, (int, float)):
+            cel.number_format = "#,##0.00"
+    for row in ws.iter_rows(min_row=2, min_col=9, max_col=10):
+        for cel in row:
+            if isinstance(cel.value, (int, float)) or (isinstance(cel.value, str) and cel.value.startswith("=")):
+                cel.number_format = "#,##0.0000"
+
     wb.save(caminho)
     print(f"  Planilha salva: {caminho}")
 
