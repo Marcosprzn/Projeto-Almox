@@ -141,6 +141,11 @@ PRIMEIRA_LINHA    = (620, 267)  # Ponto DENTRO da grade (TcxGridSite).
                                 # Nao precisa ser exatamente a 1a linha:
                                 # o bot da Ctrl+Home para ir ao topo.
 
+# Coluna da grade do MEGA de onde tirar o valor de cada linha.
+# Basta o nome como aparece no cabecalho (acentos/maiusculas nao importam).
+# Ex.: "Custo Medio Unitario", "Vl.Saida", "Vl. Total Movimento".
+COLUNA_VALOR = "Custo Medio Unitario"
+
 PASTA_ATUAL = os.path.dirname(__file__)
 EXCEL_PATH  = os.path.join(PASTA_ATUAL, "resultados_almox.xlsx")
 
@@ -415,7 +420,7 @@ def parse_linha_grid(texto):
         cab = cabecalho.split("\t")
         i_tipo = _indice_coluna(cab, "movimentacao")
         i_data = _indice_coluna(cab, "datadomovimento")
-        i_vl = _indice_coluna(cab, "vl.saida", "vlsaida")
+        i_vl = _indice_coluna(cab, _norm_col(COLUNA_VALOR))
     else:
         i_tipo, i_data, i_vl = 0, 2, 9
 
@@ -426,10 +431,10 @@ def parse_linha_grid(texto):
 
     if i_vl < 0 and not _AVISO_VLSAIDA:
         _AVISO_VLSAIDA = True
-        print("\n  [ATENCAO] A coluna 'Vl.Saida' NAO esta visivel na grade do MEGA!")
+        print(f"\n  [ATENCAO] A coluna '{COLUNA_VALOR}' NAO esta visivel na grade do MEGA!")
         print("            Todos os valores sairao vazios. Adicione a coluna:")
         print("            botao direito no cabecalho da grade -> Seletor de Campos")
-        print("            -> arraste 'Vl.Saida' para a grade. Depois rode de novo.\n")
+        print(f"            -> arraste '{COLUNA_VALOR}' para a grade. Depois rode de novo.\n")
 
     def pega(i):
         return cols[i].strip() if 0 <= i < len(cols) else ""
@@ -694,7 +699,7 @@ try:
         print(f"    -> Linhas lidas: {len(linhas_grid)}")
 
         for lg in linhas_grid:
-            print(f"       Tipo: {lg['tipo']} | Data: {lg['data']} | Vl.Saida: {lg['vl_saida']}")
+            print(f"       Tipo: {lg['tipo']} | Data: {lg['data']} | Valor: {lg['vl_saida']}")
 
         print("    [passo 4] Match por data...")
         for item in linhas_por_codigo.get(codigo, []):
